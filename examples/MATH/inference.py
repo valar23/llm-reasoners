@@ -102,14 +102,21 @@ def rap_MATH(base_model: LanguageModel,
                                      desc='GSM8k', disable=disable_tqdm)):
         algo_output = agent(example["question"])
         output_answer = utils.retrieve_answer(algo_output.terminal_state[-1].sub_answer)
-        output_all = algo_output.terminal_state[-1].sub_answer
+        output_4A = algo_output.terminal_state[-1].sub_answer
+        output_4Q = algo_output.terminal_state[-1].sub_question
+        output_3A = algo_output.terminal_state[-2].sub_answer
+        output_3Q = algo_output.terminal_state[-1].sub_question
+        output_2A = algo_output.terminal_state[-3].sub_answer
+        output_2Q = algo_output.terminal_state[-1].sub_question
+        output_1A = algo_output.terminal_state[-4].sub_answer
+        output_1Q = algo_output.terminal_state[-1].sub_question
         answer = utils.retrieve_answer_from_dataset(example["answer"])
         correct = utils.judge_answer(output_answer, answer)
         file_name = example["filename"]
 
         correct_count += correct
         accuracy = correct_count / (i + 1)
-        log_str = f'Case #{resume + i + 1}: {correct=}, {output_answer=}, {output_all=}, {answer=} , {file_name=} ; {accuracy=:.3f} ({correct_count}/{i + 1})'
+        log_str = f'Case #{resume + i + 1}: {correct=}, {output_1Q=}, {output_1A=}, {output_2Q=}, {output_2A=}, {output_3Q=}, {output_3A=}, {output_4Q=},{output_4A=}, {output_answer=}, {answer=} , {file_name=} ; {accuracy=:.3f} ({correct_count}/{i + 1})'
         tqdm.write(log_str)
         if not disable_log:
             with open(os.path.join(log_dir, 'result.log'), 'a') as f:
@@ -145,7 +152,7 @@ if __name__ == '__main__':
     def main(base_lm: str = 'llama',
              llama_ckpt: str = llama_ckpts,
              llama_size: str = '13B',
-             llama_cpp_path: str = None,
+             llama_cpp_path: str = "./models/7B/ggml-model.bin",
              batch_size: int = 2,
              interactive_prompt: str = '/data/yueshan/llm-reasoners/examples/MATH/prompts/interactive_examples.json',
              useful_prompt: str = '/data/yueshan/llm-reasoners/examples/MATH/prompts/useful_examples.json',
