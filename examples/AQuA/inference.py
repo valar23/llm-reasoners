@@ -113,7 +113,7 @@ def rap_MATH(base_model: LanguageModel,
         correct_count += correct
         accuracy = correct_count / (i + 1)
         # log_str = f'Case #{resume + i + 1}: {correct=}, {question=}, {output_all=}, {output=}, {answer=}; {accuracy=:.3f} ({correct_count}/{i + 1})'
-        log_str = f'Case #{resume + i + 1}: /n{correct=}, /n{question=}, /n{output_all=}, /n{output=}, /n{answer=}; /n{accuracy=:.3f} ({correct_count}/{i + 1})'
+        log_str = f'Case #{resume + i + 1}: \n{correct=}, \n{question=}, \n{output_all=}, \n{output=}, \n{answer=}; \n{accuracy=:.3f} ({correct_count}/{i + 1})'
         tqdm.write(log_str)
         if not disable_log:
             with open(os.path.join(log_dir, 'result.log'), 'a') as f:
