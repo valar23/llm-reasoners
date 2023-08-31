@@ -3,17 +3,37 @@ from typing import Type, Callable, Optional
 
 import numpy as np
 from datasets import load_dataset
+from reasoners.visualization import TreeLog
 from tqdm import tqdm
 from datetime import datetime
 
 from reasoners import LanguageModel, Reasoner, SearchAlgorithm
-from reasoners.algorithm import MCTS
+from reasoners.algorithm import MCTS, MCTSNode
 
-from world_model import MATHWorldModel
+from world_model import MATHWorldModel, MATHState, MATHAction
 from search_config import MATHConfig
 import utils
 import re
 from datasets import Dataset
+
+def node_visualizer(x: MCTSNode[MATHState, MATHAction]):
+    if not x.state:
+        return {}
+    return {"question": x.state[-1].sub_question, "answer": x.state[-1].sub_answer}
+
+def clean_option_value(value: str) -> str:
+    # List of words and characters to exclude
+    to_exclude = ["%", "$", "#", " min", " minutes", "seconds" ,"step/minute", "miles", "utes", "km", "Rs. ", "days", "m", "cm","feet", "days", "Loss", "Min","units", "months", "men", "kmph",]  # added spaces before "min" to avoid removing from mathematical expressions
+    
+    for item in to_exclude:
+        value = value.replace(item, "")
+        
+    match = re.match(r'([A-E])\)', value)
+    if match:
+        # Replace "A)" with "A) " without adding extra spaces if one already exists
+        value = re.sub(r'([A-E])\)', match.group(1) + ') ', value).strip()
+        
+    return value
 
 def data_reader(dataset,dataset_path, split=None, sample_size=100):
     questions = []
@@ -29,14 +49,9 @@ def data_reader(dataset,dataset_path, split=None, sample_size=100):
             data = json.loads(line)
             if isinstance(data, dict):
                 options_list = data['options']
-                options_dict = {}
-                for option in options_list:
-                    match = re.search(r'([A-E])\)[^0-9]*([\d.]+)', option)
-                    if match:
-                        options_dict[match.group(1)] = float(match.group(2))
-                question_with_options = data['question'] + "\n" + "\n".join(data['options'])
+                cleaned_options = [clean_option_value(opt) for opt in options_list]
+                question_with_options = data['question'] + " " + " ".join(cleaned_options)
                 questions.append(question_with_options)
-                # answers.append(options_dict.get(data['correct']))
                 answers.append(data['correct'])
                 options.append(options_list)
             else:
@@ -66,6 +81,7 @@ def rap_MATH(base_model: LanguageModel,
               dataset_path: str = r"/data/yueshan/llm-reasoners/examples/AQuA/dataset/AQuA",
               disable_log: bool = False,
               disable_tqdm: bool = False,
+              output_trace_in_each_iter: bool = True,
               **search_algo_params):
     if not disable_log:
         if log_dir is None:
@@ -75,7 +91,8 @@ def rap_MATH(base_model: LanguageModel,
         with open(os.path.join(log_dir, 'args.txt'), 'w') as f:
             print(sys.argv, file=f)
 
-    search_algo_params |= {'cum_reward': cum_reward, 'calc_q': calc_q, 'disable_tqdm': disable_tqdm}
+    search_algo_params |= {'cum_reward': cum_reward, 'calc_q': calc_q, 'disable_tqdm': disable_tqdm,
+                           'output_trace_in_each_iter': output_trace_in_each_iter}
     world_model = MATHWorldModel(base_model=base_model, prompt=interactive_prompt,
                                   n_confidence=n_confidence, batch_size=batch_size, temperature=temperature,
                                   early_stop_base=early_stop_base, early_stop_threshold=early_stop_threshold)
@@ -84,28 +101,32 @@ def rap_MATH(base_model: LanguageModel,
                          reward_alpha=reward_alpha, reward_confidence_default=reward_confidence_default,
                          force_terminating_on_depth_limit=force_terminating_on_depth_limit, depth_limit=depth_limit)
     search_algo = search_algo(**search_algo_params)
-    agent = Reasoner(world_model=world_model, search_config=config, search_algo=search_algo)
+    reasoner = Reasoner(world_model=world_model, search_config=config, search_algo=search_algo)
     dataset = data_reader(datasetname, dataset_path)
     correct_count = 0
     for i, example in enumerate(tqdm(dataset, total=resume + len(dataset), initial=resume,
-                                     desc='GSM8k', disable=disable_tqdm)):
-        # algo_output = agent(example["question"])
-        # if algo_output and algo_output.terminal_state and algo_output.terminal_state[-1] and algo_output.terminal_state[-1].sub_answer:
-        #     output = utils.retrieve_answer(algo_output.terminal_state[-1].sub_answer)
-        #     output_all = algo_output.terminal_state[-1].sub_answer
-        # else:
-        #     output = "Didn't get any output"
-        #     output_all = "Didn't get any output"
-        max_attempts = 3
-        for attempt in range(max_attempts):
-            algo_output = agent(example["question"])
-            if algo_output and algo_output.terminal_state and algo_output.terminal_state[-1] and algo_output.terminal_state[-1].sub_answer:
-                output = utils.retrieve_answer(algo_output.terminal_state[-1].sub_answer)
-                output_all = algo_output.terminal_state[-1].sub_answer
-                break 
-            else: 
-                output = "Didn't get any output"
-                output_all = "Didn't get any output"
+                                     desc='AQuA', disable=disable_tqdm)):
+        algo_output = reasoner(example["question"])
+        if algo_output and algo_output.terminal_state and algo_output.terminal_state[-1] and algo_output.terminal_state[-1].sub_answer:
+            output = utils.retrieve_answer(algo_output.terminal_state[-1].sub_answer)
+            output_all = algo_output.terminal_state[-1].sub_answer
+            if not any(char in output.upper() for char in 'ABCDE'):
+                output = random.choice('ABCDE')
+                output_all = "This answer is randomly generated. The answer is " + output
+        else:
+            output = "Didn't get any output"
+            output_all = "Didn't get any output"
+            
+        # max_attempts = 3
+        # for attempt in range(max_attempts):
+        #     algo_output = reasoner(example["question"])
+        #     if algo_output and algo_output.terminal_state and algo_output.terminal_state[-1] and algo_output.terminal_state[-1].sub_answer:
+        #         output = utils.retrieve_answer(algo_output.terminal_state[-1].sub_answer)
+        #         output_all = algo_output.terminal_state[-1].sub_answer
+        #         break 
+        #     else: 
+        #         output = "Didn't get any output"
+        #         output_all = "Didn't get any output"
         
         answer = (example["answer"])
         question = (example["question"])
@@ -120,6 +141,10 @@ def rap_MATH(base_model: LanguageModel,
                 print(log_str, file=f)
             with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.pkl'), 'wb') as f:
                 pickle.dump(algo_output, f)
+            if isinstance(search_algo, MCTS):
+                with open(os.path.join(log_dir, 'algo_output', f'{resume + i + 1}.json'), 'w') as f:
+                    # noinspection PyTypeChecker
+                    print(TreeLog.from_mcts_results(algo_output, node_data_factory=node_visualizer), file=f)
 
 
 if __name__ == '__main__':

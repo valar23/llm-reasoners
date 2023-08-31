@@ -1,5 +1,5 @@
 import io
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 from collections import defaultdict
 from reasoners import WorldModel, LanguageModel
 import utils
@@ -13,6 +13,14 @@ class SubResult(NamedTuple):
 
 MATHState = list[SubResult]
 MATHAction = str
+
+
+class MATHPrompt(TypedDict):
+    input: str
+    question_prefix: str
+    subquestion_prefix: str
+    answer_prefix: str
+    overall_question_prefix: str
 
 
 class MATHWorldModel(WorldModel[MATHState, MATHAction]):
@@ -56,6 +64,7 @@ class MATHWorldModel(WorldModel[MATHState, MATHAction]):
             model_input = f.getvalue()
 
         answer_dict = defaultdict(list)  # map from answer to list of thoughts
+        result = ""
         for start1 in range(0, self.n_confidence, self.early_stop_base):
             stop1 = min(start1 + self.early_stop_base, self.n_confidence)
 
@@ -71,7 +80,8 @@ class MATHWorldModel(WorldModel[MATHState, MATHAction]):
                 for output in outputs:
                     result = output.strip()
                     answer = utils.retrieve_answer(result)
-                    answer_dict[answer].append(result)
+                    if answer is not None:
+                        answer_dict[answer].append(result)
 
             # Early stop if confidence is high enough
             if len(answer_dict) == 0:  # no answer yet

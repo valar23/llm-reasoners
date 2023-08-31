@@ -77,7 +77,7 @@ class LLaMAModel(LanguageModel):
                  output_log_probs: bool = False,
                  **kwargs) -> GenerateOutput:
         if max_length is None:
-            max_length = self.max_seq_len  # use LLaMA's max length if not set
+            max_length = self.max_seq_len
         if max_new_tokens is None:
             max_new_tokens = max_length  # set to a large number cannot be reached
 
